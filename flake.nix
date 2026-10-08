@@ -47,7 +47,59 @@
               rust-src
             ]
           );
+
+        slsrt =
+          let
+            cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+            rustPlatform = final.makeRustPlatform {
+              cargo = final.rustToolchain;
+              rustc = final.rustToolchain;
+            };
+          in
+          rustPlatform.buildRustPackage {
+            pname = cargoToml.package.name;
+            version = cargoToml.package.version;
+
+            src = final.lib.fileset.toSource {
+              root = ./.;
+              fileset = final.lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./src
+                ./tests
+              ];
+            };
+            cargoLock.lockFile = ./Cargo.lock;
+
+            postInstall = ''
+              install -Dm644 ${./examples/main.lua} $out/share/slsrt/examples/main.lua
+            '';
+
+            meta = {
+              description = "Sort files into directories according to a Lua ruleset";
+              mainProgram = "slsrt";
+              platforms = supportedSystems;
+            };
+          };
       };
+
+      packages = forEachSupportedSystem (
+        { pkgs, ... }:
+        {
+          inherit (pkgs) slsrt;
+          default = pkgs.slsrt;
+        }
+      );
+
+      apps = forEachSupportedSystem (
+        { pkgs, ... }:
+        {
+          default = {
+            type = "app";
+            program = pkgs.lib.getExe pkgs.slsrt;
+          };
+        }
+      );
 
       devShells = forEachSupportedSystem (
         { pkgs, system }:
