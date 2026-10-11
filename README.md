@@ -25,6 +25,13 @@ Filters and actions are ordinary Lua functions, so anything Lua can express
 (string patterns, date math, lookup tables, helper modules) is available inside
 a rule.
 
+> [!WARNING]
+> This project has been entirely vibe-coded. Even though we did read the code to make sure nothing bad is there, we cannot assure you of its quality.
+> Use at your own risk, and probably don't use it in an environment where safety matters.
+
+> [!WARNING]
+> This project allows you to run unsandboxed Lua code. Please don't run code you found on the internet without checking it first. Also be careful when using AI to write your configs. And just be careful, in general. Life's scary out there.
+
 ## Contents
 
 - [Install](#install)
