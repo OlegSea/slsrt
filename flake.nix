@@ -91,6 +91,9 @@
         }
       );
 
+      nixosModules.default = import ./modules/nixos.nix;
+      homeManagerModules.default = import ./modules/home-manager.nix;
+
       apps = forEachSupportedSystem (
         { pkgs, ... }:
         {
