@@ -66,7 +66,12 @@ in
   options.services.slsrt = {
     enable = lib.mkEnableOption "slsrt, a file sorter driven by a Lua ruleset";
 
-    package = lib.mkPackageOption pkgs "slsrt" { };
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.slsrt or (pkgs.callPackage ../nix/package.nix { });
+      defaultText = lib.literalExpression "pkgs.slsrt or (pkgs.callPackage <slsrt>/nix/package.nix { })";
+      description = "The slsrt package to use. Built from your nixpkgs unless the overlay provides `pkgs.slsrt`.";
+    };
 
     settings = lib.mkOption {
       type = settingsType;

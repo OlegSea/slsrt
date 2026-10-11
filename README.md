@@ -256,6 +256,79 @@ end
 After `trash()` or `delete()`, any further use of the object that needs the
 file on disk raises an error.
 
+### Video
+
+These methods read the container headers of MP4, M4V, MOV, 3GP, MKV, WebM and
+AVI files. The format is detected from the file's contents, not its extension.
+Nothing is decoded and no external tool is run. For any other file they return
+`nil` (or an empty list), so they are safe in a filter that sees all kinds of
+files.
+
+| Method | Returns |
+| ------ | ------- |
+| `f:duration()` | Length in seconds. |
+| `f:resolution()` | `width, height` of the first video track as displayed, with aspect ratio and rotation applied. |
+| `f:framerate()` | Average frames per second of the first video track, rounded to 3 decimals (`29.97`, `60`). |
+| `f:video_codec()`, `f:audio_codec()` | Codec of the first video or audio track: `h264`, `hevc`, `av1`, `vp9`, `mpeg4`, `prores`, `aac`, `opus`, `mp3`, `ac3`, `flac`, `pcm`, ... |
+| `f:tag(name)` | A metadata value, or `nil`. |
+| `f:tracks(kind)` | List of track tables. `kind` is optional: `"video"`, `"audio"`, `"subtitle"` or `"other"`. |
+| `f:subtitles()` | Same as `f:tracks("subtitle")`. |
+| `f:media()` | Everything at once: `{ container, duration, bitrate, tags, tracks }`. `container` is `mp4`, `m4v`, `m4a`, `mov`, `3gp`, `mkv`, `webm` or `avi`. |
+
+Tag names are unified across formats: `title`, `artist`, `album`, `date`,
+`comment`, `genre`, `encoder`, `creation_time`. `f:tag("author")` and
+`f:tag("ARTIST")` both find `artist`. Tags with no unified name keep their
+own name, lowercased.
+
+Each track table has these fields; a field the track doesn't have is `nil`:
+
+| Fields | Meaning |
+| ------ | ------- |
+| `id`, `kind`, `codec`, `codec_tag` | Track number, kind, codec, and the container's own codec identifier (`avc1`, `V_VP9`, `XVID`). |
+| `language`, `name`, `default`, `forced` | ISO 639-2 or BCP 47 code, track title, and flags. MP4 and AVI have no default flag; the first track of each kind counts as default. |
+| `duration`, `bitrate` | Seconds, bits per second. In MP4 a track's duration includes any delay before its first frame, so it is the time the track ends. |
+| `width`, `height`, `display_width`, `display_height`, `rotation` | Coded size, displayed size, and rotation in degrees clockwise. |
+| `fps`, `frame_count` | Average frame rate and number of frames. |
+| `profile`, `level`, `bit_depth`, `chroma` | `"High"`, `"4.1"`, `10`, `"4:2:0"`. Video codecs and AAC. |
+| `color_primaries`, `color_transfer`, `color_matrix` | ffmpeg names, e.g. `bt2020` and `smpte2084` for HDR10, `arib-std-b67` for HLG. |
+| `sample_rate`, `channels` | Audio only. |
+
+```lua
+slsrt.rule {
+  name = "4k",
+  paths = { "~/Downloads" },
+  filter = function(f)
+    local w, h = f:resolution()
+    return w and math.max(w, h) >= 3840
+  end,
+  action = function(f) f:move_to("~/Videos/4K") end,
+}
+
+slsrt.rule {
+  name = "russian subtitles",
+  paths = { "~/Downloads" },
+  filter = function(f)
+    for _, s in ipairs(f:subtitles()) do
+      if s.language == "rus" then return true end
+    end
+  end,
+  action = function(f) f:move_to("~/Videos/RU") end,
+}
+```
+
+Some values depend on what the file stores:
+
+- Matroska files written as a live stream (for example by a browser's
+  MediaRecorder) have no duration in their header, so `f:duration()` returns
+  `nil`.
+- WebM files often have no frame rate in the header, so `f:framerate()` returns
+  `nil`.
+- AVI has no track languages, and its audio bitrate is missing for VBR MP3.
+- A file that is still being written (no `moov` box yet for MP4) returns `nil`.
+
+Results are cached per file like the other metadata, so calling several of
+these methods reads the headers once.
+
 ## The `slsrt` table
 
 | Name | Meaning |
@@ -338,17 +411,18 @@ The flake provides:
 
 Supported systems: `x86_64-linux`, `aarch64-linux`, `aarch64-darwin`.
 
-Both modules take their default package from `pkgs.slsrt`, which is not in
-nixpkgs. Apply the overlay, or set `package` explicitly:
+Add the flake as an input:
 
 ```nix
-{
-  inputs.slsrt.url = "github:OlegSea/slsrt";
-
-  # in your NixOS or Home Manager configuration:
-  nixpkgs.overlays = [ inputs.slsrt.overlays.default ];
-}
+inputs.slsrt.url = "github:OlegSea/slsrt";
 ```
+
+Both modules build slsrt from your own nixpkgs, so you don't need the overlay.
+If you apply the overlay, the modules use its `pkgs.slsrt` instead. To use a
+different build, set `package`.
+
+The installed package contains only the binary and its runtime libraries. The
+Rust toolchain is used to build it and is not part of the closure.
 
 ### NixOS
 
@@ -384,7 +458,7 @@ services.slsrt = {
 | Option | Default | Meaning |
 | ------ | ------- | ------- |
 | `enable` | `false` | Turn the service on. |
-| `package` | `pkgs.slsrt` | Package to run. |
+| `package` | `pkgs.slsrt` if the overlay is applied, otherwise built from your nixpkgs | Package to run. |
 | `settings` | `""` | Lua source written to `~/.config/slsrt/main.lua`. Must not be empty when enabled. |
 | `mode` | `"watch"` | `"watch"` runs `slsrt watch` as a resident service. `"timer"` runs `slsrt run` on a timer. |
 | `settleMs` | `2000` | Passed to `--settle-ms` in watch mode. |
@@ -410,6 +484,7 @@ nix fmt              # formats the Nix files with nixfmt
 
 The dev shell provides a stable Rust toolchain from fenix (with clippy,
 rustfmt and rust-src), rust-analyzer, cargo-watch, cargo-edit and cargo-deny.
+The package itself builds with nixpkgs' `rustPlatform`, not fenix.
 
 Integration tests in [`tests/engine.rs`](tests/engine.rs) build configs in a
 temporary directory and run the engine against real files.
@@ -432,8 +507,8 @@ temporary directory and run the engine against real files.
 
 The `file` object has no built-in fields or methods. Everything on it is
 registered by a module in `src/modules/`: `meta.rs` provides names, metadata
-and matching, `actions.rs` provides the file operations. To add something like
-EXIF or media info:
+and matching, `actions.rs` provides the file operations, and `video/` reads
+video containers. To add something like EXIF:
 
 1. Create a type implementing `Module` and register fields and methods through
    `ModuleCtx::file_field` / `file_method` (or `api_fn` for functions on the

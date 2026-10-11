@@ -308,3 +308,62 @@ fn invalid_action_option_is_an_error() {
     assert_eq!(engine.process(&file).errors, 1);
     assert!(exists(&file));
 }
+
+/// Minimal AVI: one 1920×1080 XviD stream at 25 fps, 50 frames, titled "clip".
+fn tiny_avi() -> Vec<u8> {
+    fn chunk(id: &[u8], body: &[u8]) -> Vec<u8> {
+        [id, &(body.len() as u32).to_le_bytes(), body].concat()
+    }
+    let le = |v: u32| v.to_le_bytes();
+    let avih = [le(40_000), le(0), le(0), le(0), le(50), le(0), le(1), le(0), le(1920), le(1080)].concat();
+    let strh = [&b"vids"[..], b"XVID", &[0; 12], &le(1), &le(25), &le(0), &le(50), &[0; 20]].concat();
+    let strf = [le(40), le(1920), le(1080), le(0x0018_0001), *b"XVID"].concat();
+    let strl = chunk(b"LIST", &[&b"strl"[..], &chunk(b"strh", &strh), &chunk(b"strf", &strf)].concat());
+    let hdrl = chunk(b"LIST", &[&b"hdrl"[..], &chunk(b"avih", &avih), &strl].concat());
+    let info = chunk(b"LIST", &[&b"INFO"[..], &chunk(b"INAM", b"clip")].concat());
+    chunk(b"RIFF", &[&b"AVI "[..], &hdrl, &info].concat())
+}
+
+#[test]
+fn video_helpers() {
+    let fx = Fixture::new();
+    fs::write(fx.path("in/movie.avi"), tiny_avi()).unwrap();
+    fx.write("in/notes.mp4", "not really a video");
+    let engine = fx.engine(
+        r#"
+        slsrt.rule {
+          name = "hd", paths = { "$IN" },
+          filter = function(f)
+            local w, h = f:resolution()
+            return w == 1920 and h == 1080 and f:duration() == 2 and f:framerate() == 25
+              and f:video_codec() == "mpeg4" and f:audio_codec() == nil and f:tag("title") == "clip"
+              and #f:tracks() == 1 and #f:tracks("video") == 1 and #f:subtitles() == 0
+              and f:media().container == "avi" and f:media().tracks[1].codec_tag == "XVID"
+          end,
+          action = function(f) f:move_to("$ROOT/hd") end,
+        }
+        slsrt.rule {
+          name = "not video", paths = { "$IN" },
+          filter = function(f) return f:media() == nil and f:resolution() == nil and #f:tracks() == 0 end,
+          action = function(f) f:move_to("$ROOT/other") end,
+        }
+        "#,
+        false,
+    );
+    let summary = run::run(&engine).unwrap();
+    assert_eq!((summary.matched, summary.errors), (2, 0));
+    assert!(exists(fx.path("hd/movie.avi")));
+    assert!(exists(fx.path("other/notes.mp4")));
+}
+
+#[test]
+fn unknown_track_kind_is_an_error() {
+    let fx = Fixture::new();
+    let file = fx.write("in/a.txt", "x");
+    let engine = fx.engine(
+        r#"slsrt.rule { name = "r", paths = { "$IN" }, filter = function(f) return f:tracks("subs") end,
+                        action = function() end }"#,
+        false,
+    );
+    assert_eq!(engine.process(&file).errors, 1);
+}

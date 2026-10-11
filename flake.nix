@@ -35,52 +35,7 @@
     in
     {
       overlays.default = final: prev: {
-        rustToolchain =
-          with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
-          combine (
-            with stable;
-            [
-              clippy
-              rustc
-              cargo
-              rustfmt
-              rust-src
-            ]
-          );
-
-        slsrt =
-          let
-            cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-            rustPlatform = final.makeRustPlatform {
-              cargo = final.rustToolchain;
-              rustc = final.rustToolchain;
-            };
-          in
-          rustPlatform.buildRustPackage {
-            pname = cargoToml.package.name;
-            version = cargoToml.package.version;
-
-            src = final.lib.fileset.toSource {
-              root = ./.;
-              fileset = final.lib.fileset.unions [
-                ./Cargo.toml
-                ./Cargo.lock
-                ./src
-                ./tests
-              ];
-            };
-            cargoLock.lockFile = ./Cargo.lock;
-
-            postInstall = ''
-              install -Dm644 ${./examples/main.lua} $out/share/slsrt/examples/main.lua
-            '';
-
-            meta = {
-              description = "Sort files into directories according to a Lua ruleset";
-              mainProgram = "slsrt";
-              platforms = supportedSystems;
-            };
-          };
+        slsrt = final.callPackage ./nix/package.nix { };
       };
 
       packages = forEachSupportedSystem (
@@ -91,8 +46,8 @@
         }
       );
 
-      nixosModules.default = import ./modules/nixos.nix;
-      homeManagerModules.default = import ./modules/home-manager.nix;
+      nixosModules.default = import ./nix/nixos.nix;
+      homeManagerModules.default = import ./nix/home-manager.nix;
 
       apps = forEachSupportedSystem (
         { pkgs, ... }:
@@ -106,6 +61,20 @@
 
       devShells = forEachSupportedSystem (
         { pkgs, system }:
+        let
+          rustToolchain =
+            with inputs.fenix.packages.${system};
+            combine (
+              with stable;
+              [
+                clippy
+                rustc
+                cargo
+                rustfmt
+                rust-src
+              ]
+            );
+        in
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
@@ -121,7 +90,7 @@
 
             env = {
               # Required by rust-analyzer
-              RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+              RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
             };
           };
         }

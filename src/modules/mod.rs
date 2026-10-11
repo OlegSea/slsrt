@@ -6,6 +6,7 @@
 
 pub mod actions;
 pub mod meta;
+pub mod video;
 
 use mlua::prelude::*;
 
@@ -18,7 +19,7 @@ pub trait Module {
 
 /// Every module installed into the Lua state, in registration order.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(meta::Meta), Box::new(actions::Actions)]
+    vec![Box::new(meta::Meta), Box::new(actions::Actions), Box::new(video::Video)]
 }
 
 /// Registration API handed to modules.
