@@ -350,6 +350,16 @@ nixpkgs. Apply the overlay, or set `package` explicitly:
 }
 ```
 
+### NixOS
+
+```nix
+imports = [ inputs.slsrt.nixosModules.default ];
+programs.slsrt.enable = true;
+```
+
+This only installs the binary. Rules stay per-user in each user's config
+directory.
+
 ### Home Manager
 
 ```nix
@@ -388,16 +398,6 @@ is active again.
 
 Remember that `settings` is a Nix string: `${...}` inside it is Nix
 interpolation. Use `$VAR` in rule paths, or escape it as `''${VAR}`.
-
-### NixOS
-
-```nix
-imports = [ inputs.slsrt.nixosModules.default ];
-programs.slsrt.enable = true;
-```
-
-This only installs the binary. Rules stay per-user in each user's config
-directory.
 
 ## Development
 
